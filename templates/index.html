@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8">
+  <title>ImagetoEnglish</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      color: #d4a373;
+      margin: 20px;
+      text-align: center;
+      font-size: 20px;
+    }
+
+    #thumbnail {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      width: 80px;
+      height: 100px;
+      border-radius: 8px;
+      object-fit: cover;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      display: none;
+      z-index: 10;
+      cursor: pointer;
+    }
+
+    #camera-container {
+      position: relative;
+      width: 90vw;
+      max-width: 360px;
+      aspect-ratio: 3/4;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    video,
+    img#capturedImage {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    video.active,
+    img#capturedImage.active {
+      display: block;
+    }
+
+    #snapBtn,
+    #retakeBtn {
+      margin: 15px 0;
+      background-color: #d4a373;
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 10px 24px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #snapBtn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    #retakeBtn {
+      background-color: #999;
+      color: white;
+      border-radius: 50px;
+      padding: 10px 20px;
+      font-size: 14px;
+      margin: 10px auto 30px;
+      cursor: pointer;
+      display: none;
+    }
+
+    #loading {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    #resultBox {
+      background: white;
+      margin: 20px auto;
+      padding: 15px;
+      border-radius: 10px;
+      width: 90vw;
+      max-width: 360px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      display: none;
+    }
+
+    #analysisList li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+
+    h3 span {
+      color: #333;
+    }
+
+    #errorMsg {
+      color: red;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <img id="thumbnail" title="点击重新拍摄" />
+  <h1>ImagetoEnglish</h1>
+
+  <div id="camera-container">
+    <video id="video" autoplay playsinline class="active"></video>
+    <img id="capturedImage" />
+  </div>
+  <button id="weixinAuthBtn"
+    style="display:none;margin-top:20px;background:#007aff;color:white;border:none;padding:10px 20px;border-radius:6px;font-size:15px;">📷
+    启动相机</button>
+
+  <button id="snapBtn">📷 拍照并分析</button>
+
+  <div id="loading" style="display: none;">分析中，请稍候...</div>
+  <div id="errorMsg" style="display: none;"></div>
+
+  <div id="resultBox">
+    <h2>🔍 分析结果</h2>
+    <ul id="analysisList"></ul>
+  </div>
+
+  <button id="retakeBtn">🔄 重新拍照</button>
+
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const snapBtn = document.getElementById('snapBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+    const loading = document.getElementById('loading');
+    const errorMsg = document.getElementById('errorMsg');
+    const resultBox = document.getElementById('resultBox');
+    const analysisList = document.getElementById('analysisList');
+    const capturedImage = document.getElementById('capturedImage');
+    const thumbnail = document.getElementById('thumbnail');
+    const cameraContainer = document.getElementById('camera-container');
+
+    let stream;
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        video.classList.add('active');
+        capturedImage.classList.remove('active');
+        thumbnail.style.display = 'none';
+      } catch (err) {
+        errorMsg.style.display = 'block';
+        errorMsg.innerText = '❌ 无法访问摄像头';
+        console.error(err);
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    }
+
+    function resetUI() {
+      errorMsg.style.display = 'none';
+      resultBox.style.display = 'none';
+      loading.style.display = 'none';
+      analysisList.innerHTML = '';
+      snapBtn.style.display = 'inline-block';
+    }
+
+    snapBtn.addEventListener('click', async () => {
+      resetUI();
+      snapBtn.style.display = 'none'; // 隐藏拍照按钮
+      loading.style.display = 'block';
+
+      try {
+        // 拍照
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // 停止视频 + 隐藏相机框
+        stopCamera();
+        cameraContainer.style.display = 'none';
+        retakeBtn.style.display = 'inline-block'; // 显示重新拍照按钮
+        const dataURL = canvas.toDataURL('image/jpeg');
+        thumbnail.src = dataURL;
+        thumbnail.style.display = 'block';
+
+        // 上传
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg'));
+
+        const formData = new FormData();
+        formData.append('file', blob, 'photo.jpg');
+        const uploadRes = await fetch('/v1/upload', { method: 'POST', body: formData });
+        if (!uploadRes.ok) throw new Error('上传失败');
+        const uploadData = await uploadRes.json();
+        const imageUrl = location.origin + uploadData.url;
+
+        // 分析
+        const analyzeRes = await fetch('/v1/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_url: imageUrl })
+        });
+        const analyzeData = await analyzeRes.json();
+
+
+        const rows = [
+          ['中文名称', analyzeData.中文名称],
+          ['英文名称', analyzeData.英文名称],
+          ['英文描述', analyzeData.英文描述]
+        ];
+        rows.forEach(([label, value]) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<strong>${label}：</strong>${value || '未知'}`;
+          analysisList.appendChild(li);
+        });
+
+        resultBox.style.display = 'block';
+
+      } catch (err) {
+        errorMsg.style.display = 'block';
+        errorMsg.innerText = '❌ ' + (err.message || '出错了');
+        console.error(err);
+      } finally {
+        loading.style.display = 'none';
+      }
+    });
+
+    retakeBtn.addEventListener('click', () => {
+      resetUI();
+      cameraContainer.style.display = 'block';
+      retakeBtn.style.display = 'none';
+      thumbnail.style.display = 'none';
+      startCamera();
+    });
+
+    startCamera();
+    function isWeixin() {
+      return /micromessenger/i.test(navigator.userAgent);
+    }
+
+    const weixinAuthBtn = document.getElementById('weixinAuthBtn');
+
+    if (isWeixin()) {
+      // 微信中显示授权按钮，隐藏视频默认启动
+      snapBtn.style.display = 'none';
+      video.classList.remove('active'); // 确保不会误展示黑屏
+      weixinAuthBtn.style.display = 'inline-block';
+    }
+
+    // 微信授权按钮点击后尝试开启相机
+    weixinAuthBtn.addEventListener('click', () => {
+      weixinAuthBtn.innerText = '📷 正在请求权限...';
+      startCamera().then(() => {
+        weixinAuthBtn.style.display = 'none';
+        snapBtn.style.display = 'inline-block';
+      }).catch(() => {
+        weixinAuthBtn.innerText = '❌ 无法访问摄像头，请检查授权';
+      });
+    });
+
+    // 页面从后台回来时，如果视频流失效则重新启动
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (isWeixin() && (!video.srcObject || video.readyState !== 4)) {
+          startCamera();
+        }
+      }
+    });
+
+  </script>
+</body>
+
+</html>

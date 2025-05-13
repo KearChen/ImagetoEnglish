@@ -1,0 +1,12 @@
+app:
+  name: ImagetoEnglish
+  port: 8090
+  SetMode: release
+
+Ai:
+  models:
+    glm-4v-flash:
+      apiKey: <你的API密钥>
+      base_url: https://open.bigmodel.cn/api/paas/v4/chat/completions
+      model: glm-4v-flash
+      temperature: 0.95
